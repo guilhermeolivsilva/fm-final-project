@@ -38,7 +38,7 @@ sig Player, AuctionHouse extends ItemHolder{}
 /*
 	OPERATORS
 
-	CREATE:		create auction
+	CREATE:				create auction
 	END:		 		end auction
 	BID:		 		bid on auction
 	BUY:		 		buyout auction
@@ -51,29 +51,56 @@ one sig Track {
 }
 
 /*
-	PREDICATES AND FACTS
+	AUXILIARY PREDICATES AND FACTS
 */
+
+pred otherAuctionsStayTheSame [a : Auction] {
+	all otherAuctions : (Auction - a) | otherAuctions.seller' = otherAuctions.seller
+	all otherAuctions : (Auction - a) | otherAuctions.forSale' = otherAuctions.forSale
+	all otherAuctions : (Auction - a) | otherAuctions.auctionStatus' = otherAuctions.auctionStatus
+	all otherAuctions : (Auction - a) | otherAuctions.highestBidder' = otherAuctions.highestBidder
+	all otherAuctions : (Auction - a) | otherAuctions.buyoutBidder' = otherAuctions.buyoutBidder
+}
+
+pred otherItemsStayTheSame [i : Item] {
+	all otherItems : (Item - i) | otherItems.owner' = otherItems.owner
+	all otherItems : (Item - i) | otherItems.itemStatus' = otherItems.itemStatus
+}
+
+pred otherItemHoldersStayTheSame [p : Player] {
+	all otherItemHolders : (ItemHolder - p - AuctionHouse) |
+		otherItemHolders.inventory' = otherItemHolders.inventory
+}
 
 fact "Ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
-		(i.owner = ih => i in ih.inventory) && (i in ih.inventory => i.owner = ih)
+		(i.owner = ih => i in ih.inventory) &&
+		(i in ih.inventory => i.owner = ih)
 }
 
 fact "Item owner can't bid in their own auction" {
 	all a : Auction |
-		(no a.seller) || (a.seller != a.highestBidder && a.seller != a.buyoutBidder)
+		(no a.seller) ||
+		(a.seller != a.highestBidder && a.seller != a.buyoutBidder)
 }
 
 fact "Items must not appear in multiple auctions" {
-	all a1, a2 : Auction | a1.auctionStatus = Active && a1 != a2 => a1.forSale != a2.forSale
+	all a1, a2 : Auction |
+		a1.auctionStatus = Active &&
+		a2.auctionStatus = Active &&
+		a1 != a2 => a1.forSale != a2.forSale
 }
-
-
 
 /*
 	OPERATIONS
 */
 
+/*
+	KNOWN BUGS
+	1. An Auction status does not hold between steps.
+	2. The item.owner relation does not hold between steps.
+	3. The item.itemStatus relation does not hold between steps.
+*/
 pred createAuction [i : Item, p : Player, a : Auction] {
 	/*
 		Preconditions
@@ -81,23 +108,26 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 		2. The Item must belong to the seller.
 		3. The Auction must be inactive.
 	*/
-	no otherAuction : Auction | otherAuction.forSale = i
+	no otherAuctions : (Auction - a) | otherAuctions.forSale = i
 	i.itemStatus = NotForSale
 	i.owner = p
 	a.auctionStatus = NotStarted
 
 	/*
 		Post-conditions
-		1. The Item ownership is transferred to the Auction House.
+		1. The Item ownership is transferred to the Auction House and removed from the seller's inventory.
 		2. The Item status is set to ForSale.
 		3. The Auction status is set to active.
 		4. There are no bidders.
 	*/
 	i.owner' = AuctionHouse
+	AuctionHouse.inventory' = AuctionHouse.inventory + i
+	p.inventory' = (p.inventory - i)
 	i.itemStatus' = ForSale
 	a.auctionStatus' = Active
 	a.forSale' = i
 	a.seller' = p
+
 	no a.highestBidder
 	no a.buyoutBidder
 	Track.op' = CREATE
@@ -108,8 +138,9 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 		2. The other Player's relations should remain the same.
 		3. The other Auctions' relations should remain the same.
 	*/
-	all otherItems : (p.inventory - i) | otherItems' = otherItems
-	all otherPlayers : (Player - p) | otherPlayers.inventory' = otherPlayers.inventory
+	otherItemHoldersStayTheSame[p]
+	otherItemsStayTheSame[i]
+	otherAuctionsStayTheSame[a]
 }
 
 /*
@@ -120,7 +151,7 @@ pred init [] {
 	// No initial operation to track
 	no op
 
-	// No Auctions have started or finished
+	// No Auctions have yet started
 	all a : Auction | a.auctionStatus = NotStarted
 
 	// No Items nor Players are associated with any Auctions
@@ -131,6 +162,10 @@ pred init [] {
 
 	// No Items are for sale
 	all i : Item | i.itemStatus = NotForSale
+	no AuctionHouse.inventory
+
+	// All Items have a Player owner
+	all i : Item | some p : Player | i.owner = p
 }
 
 /*
@@ -147,7 +182,7 @@ pred trans []  {
 
 pred System {
 	init
-   always trans
+	always trans
 }
 
 run execution { System } for 8
