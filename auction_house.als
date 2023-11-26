@@ -10,9 +10,9 @@
 	SIGNATURES
 */
 
+// Auction
 abstract sig AuctionStatus {}
 one sig NotStarted, Active, Ended extends AuctionStatus {}
-
 sig Auction {
 	var seller: lone Player,
 	var forSale: lone Item,
@@ -21,19 +21,25 @@ sig Auction {
 	var buyoutBidder: lone Player
 }
 
+// Item
 abstract sig ItemStatus {}
 one sig ForSale, NotForSale extends ItemStatus {}
-
 sig Item {
 	var owner: lone ItemHolder,
 	var itemStatus: one ItemStatus
 }
 
+// Player/Auction House
 abstract sig ItemHolder {
-	var inventory: set Item
+	var inventory: set Item,
+	var goldPurse: set GoldCoin
 }
-
 sig Player, AuctionHouse extends ItemHolder{}
+
+// Gold
+sig GoldCoin {
+	var holder: lone ItemHolder
+}
 
 /*
 	OPERATORS
@@ -45,7 +51,7 @@ sig Player, AuctionHouse extends ItemHolder{}
 */
 
 abstract sig Operator {}
-one sig CREATE, END, BID, BUY extends Operator {}
+one sig CREATE, END, BID, BUY, TAX extends Operator {}
 one sig Track {
   var op: lone Operator
 }
@@ -72,10 +78,16 @@ pred otherItemHoldersStayTheSame [p : Player] {
 		otherItemHolders.inventory' = otherItemHolders.inventory
 }
 
-fact "Ownership is reflexive" {
+fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
 		(i.owner = ih => i in ih.inventory) &&
 		(i in ih.inventory => i.owner = ih)
+}
+
+fact "Gold holding is reflexive" {
+	all gc : GoldCoin, ih : ItemHolder |
+		(gc.holder = ih => gc in ih.goldPurse) &&
+		(gc in ih.goldPurse => gc.holder = ih)
 }
 
 fact "Item owner can't bid in their own auction" {
@@ -166,6 +178,7 @@ pred init [] {
 
 	// All Items have a Player owner
 	all i : Item | some p : Player | i.owner = p
+	all gc : GoldCoin | some p : Player | gc.holder = p
 }
 
 /*
@@ -182,7 +195,7 @@ pred trans []  {
 
 pred System {
 	init
-	always trans
+	//always trans
 }
 
-run execution { System } for 8
+run execution { System } for 9
