@@ -13,6 +13,7 @@
 // Auction
 abstract sig AuctionStatus {}
 one sig NotStarted, Active, Ended extends AuctionStatus {}
+sig JustStarted, FirstRound, SecondRound, ThirdRound extends Active {}
 sig Auction {
 	var seller: lone Player,
 	var forSale: lone Item,
@@ -78,6 +79,20 @@ pred otherItemHoldersStayTheSame [p : Player] {
 		otherItemHolders.inventory' = otherItemHolders.inventory
 }
 
+pred updateAuctionsStatus [a : Auction] {
+	all otherAuctions : (Auction - a) |
+		otherAuctions.auctionStatus = ThirdRound => otherAuctions.auctionStatus' = Ended
+
+	all otherAuctions : (Auction - a) |
+		otherAuctions.auctionStatus = SecondRound => otherAuctions.auctionStatus' = ThirdRound
+
+	all otherAuctions : (Auction - a) |
+		otherAuctions.auctionStatus = FirstRound => otherAuctions.auctionStatus' = SecondRound
+
+	all otherAuctions : (Auction - a) |
+		otherAuctions.auctionStatus = JustStarted => otherAuctions.auctionStatus' = FirstRound
+}
+
 fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
 		(i.owner = ih => i in ih.inventory) &&
@@ -129,14 +144,14 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 		Post-conditions
 		1. The Item ownership is transferred to the Auction House and removed from the seller's inventory.
 		2. The Item status is set to ForSale.
-		3. The Auction status is set to active.
+		3. The Auction status is set to "just started".
 		4. There are no bidders.
 	*/
 	i.owner' = AuctionHouse
 	AuctionHouse.inventory' = AuctionHouse.inventory + i
 	p.inventory' = (p.inventory - i)
 	i.itemStatus' = ForSale
-	a.auctionStatus' = Active
+	a.auctionStatus' = JustStarted
 	a.forSale' = i
 	a.seller' = p
 
@@ -151,8 +166,8 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 		3. The other Auctions' relations should remain the same.
 	*/
 	otherItemHoldersStayTheSame[p]
-	otherItemsStayTheSame[i]
-	otherAuctionsStayTheSame[a]
+	// otherItemsStayTheSame[i]
+	// otherAuctionsStayTheSame[a]
 }
 
 /*
@@ -195,7 +210,7 @@ pred trans []  {
 
 pred System {
 	init
-	//always trans
+	always trans
 }
 
-run execution { System } for 9
+run execution { System } for 8
