@@ -61,38 +61,6 @@ one sig Track {
 	AUXILIARY PREDICATES AND FACTS
 */
 
-pred otherAuctionsStayTheSame [a : set Auction] {
-	all otherAuctions : a | otherAuctions.seller' = otherAuctions.seller
-	all otherAuctions : a | otherAuctions.forSale' = otherAuctions.forSale
-	all otherAuctions : a | otherAuctions.auctionStatus' = otherAuctions.auctionStatus
-	all otherAuctions : a | otherAuctions.highestBidder' = otherAuctions.highestBidder
-	all otherAuctions : a | otherAuctions.buyoutBidder' = otherAuctions.buyoutBidder
-}
-
-pred otherItemsStayTheSame [i : set Item] {
-	all otherItems : i | otherItems.owner' = otherItems.owner
-	all otherItems : i | otherItems.itemStatus' = otherItems.itemStatus
-}
-
-pred otherItemHoldersStayTheSame [ih : set ItemHolder] {
-	all otherItemHolders : ih | otherItemHolders.inventory' = otherItemHolders.inventory
-	all otherItemHolders : ih | otherItemHolders.balance' = otherItemHolders.balance
-}
-
-pred updateAuctionsStatus [a : set Auction] {
-	all otherAuctions : a |
-		otherAuctions.auctionStatus = ThirdRound => otherAuctions.auctionStatus' = Ended
-
-	all otherAuctions : a |
-		otherAuctions.auctionStatus = SecondRound => otherAuctions.auctionStatus' = ThirdRound
-
-	all otherAuctions : a |
-		otherAuctions.auctionStatus = FirstRound => otherAuctions.auctionStatus' = SecondRound
-
-	all otherAuctions : a |
-		otherAuctions.auctionStatus = JustStarted => otherAuctions.auctionStatus' = FirstRound
-}
-
 fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
 		(i.owner = ih => i in ih.inventory) &&
@@ -113,6 +81,11 @@ fact "Items must not appear in multiple auctions" {
 }
 
 /*
+	FRAME CONDITIONS
+*/
+
+
+/*
 	OPERATIONS
 */
 
@@ -123,64 +96,58 @@ fact "Items must not appear in multiple auctions" {
 	3. The item.itemStatus relation does not hold between steps.
 */
 pred createAuction [i : Item, p : Player, a : Auction] {
-	/*
-		Preconditions
-		1. The Item must not be already listed in another Auction.
-		2. The Item must belong to the seller.
-		3. The Auction must be inactive.
-	*/
+	// Preconditions
+	// 1. The Item must not be already listed in another Auction.
 	no otherAuctions : (Auction - a) | otherAuctions.forSale = i
 	i.itemStatus = NotForSale
+
+	// 2. The Player must own the item.
 	i.owner = p
+
+	// 3. The Auction must be inactive.
 	a.auctionStatus = NotStarted
 
-	/*
-		Post-conditions
-		1. The Item ownership is transferred to the Auction House and removed from the seller's inventory.
-		2. The Item status is set to ForSale.
-		3. The Auction status is set to "just started".
-		4. There are no bidders.
-	*/
+	// Post-conditions
+	// 1. The Item ownership is transferred to the Auction House and removed from the seller's inventory.
 	i.owner' = AuctionHouse
 	AuctionHouse.inventory' = AuctionHouse.inventory + i
 	p.inventory' = (p.inventory - i)
+
+	// 2. The Item status is set to ForSale.
 	i.itemStatus' = ForSale
+
+	// 3. The Auction status is set to "just started".
 	a.auctionStatus' = JustStarted
+
+	// 4. The Item is set as the sellee, Player is set as the seller.
 	a.forSale' = i
 	a.seller' = p
 
+	// 5. There are no bidders.
 	no a.highestBidder
 	no a.buyoutBidder
+
 	Track.op' = CREATE
 
-	/*
-		Frame conditions
-		1. Other Items in the Player p's inventory should remain the same.
-		2. The other Player's relations should remain the same.
-		3. The other Auctions' relations should remain the same.
-	*/
-	// TODO: fix the parameters
-	// otherItemHoldersStayTheSame[p]
-	// otherItemsStayTheSame[i]
-	// otherAuctionsStayTheSame[a]
-	// updateAuctionsStatus[a]
+	// Frame conditions
+	// 1. Other Items in the Player p's inventory should remain the same.
+	// 2. The other Player's relations should remain the same.
+	// 3. The other Auctions' relations should remain the same.
 }
 
 pred bidOnAuction [p : Player, a : Auction] {
-	/*
-		Preconditions
-		1. The Player to bid must be different from the seller.
-		2. The Auction must be Active (i.e., at most, at the third round).
-		3. The Player must not already be the highest bidder.
-	*/
+	// Preconditions
+	// 1. The Player to bid must be different from the seller.
 	p != a.seller
+
+	// 2. The Auction must be Active (i.e., at most, at the third round).
 	a.auctionStatus = Active
+
+	// 3. The Player must not already be the highest bidder.
 	a.highestBidder != p
 
-	/*
-		Postconditions
-		1. The Player becomes the highest bidder.
-	*/
+	// Postconditions
+	// 1. The Player becomes the highest bidder.
 	a.highestBidder' = p
 
 	Track.op' = BID
@@ -222,9 +189,9 @@ pred init [] {
 */
 
 pred trans []  {
-	// (some i : Item, p : Player, a : Auction | createAuction[i, p, a])
+	(some i : Item, p : Player, a : Auction | createAuction[i, p, a])
 	// or
-	(after some a : Auction | some p : Player |  bidOnAuction[p, a])
+	// (after some a : Auction | some p : Player |  bidOnAuction[p, a])
 }
 
 /*
