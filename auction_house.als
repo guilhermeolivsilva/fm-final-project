@@ -61,35 +61,35 @@ one sig Track {
 	AUXILIARY PREDICATES AND FACTS
 */
 
-pred otherAuctionsStayTheSame [a : Auction] {
-	all otherAuctions : (Auction - a) | otherAuctions.seller' = otherAuctions.seller
-	all otherAuctions : (Auction - a) | otherAuctions.forSale' = otherAuctions.forSale
-	all otherAuctions : (Auction - a) | otherAuctions.auctionStatus' = otherAuctions.auctionStatus
-	all otherAuctions : (Auction - a) | otherAuctions.highestBidder' = otherAuctions.highestBidder
-	all otherAuctions : (Auction - a) | otherAuctions.buyoutBidder' = otherAuctions.buyoutBidder
+pred otherAuctionsStayTheSame [a : set Auction] {
+	all otherAuctions : a | otherAuctions.seller' = otherAuctions.seller
+	all otherAuctions : a | otherAuctions.forSale' = otherAuctions.forSale
+	all otherAuctions : a | otherAuctions.auctionStatus' = otherAuctions.auctionStatus
+	all otherAuctions : a | otherAuctions.highestBidder' = otherAuctions.highestBidder
+	all otherAuctions : a | otherAuctions.buyoutBidder' = otherAuctions.buyoutBidder
 }
 
-pred otherItemsStayTheSame [i : Item] {
-	all otherItems : (Item - i) | otherItems.owner' = otherItems.owner
-	all otherItems : (Item - i) | otherItems.itemStatus' = otherItems.itemStatus
+pred otherItemsStayTheSame [i : set Item] {
+	all otherItems : i | otherItems.owner' = otherItems.owner
+	all otherItems : i | otherItems.itemStatus' = otherItems.itemStatus
 }
 
-pred otherItemHoldersStayTheSame [p : Player] {
-	all otherItemHolders : (ItemHolder - p - AuctionHouse) |
-		otherItemHolders.inventory' = otherItemHolders.inventory
+pred otherItemHoldersStayTheSame [ih : set ItemHolder] {
+	all otherItemHolders : ih | otherItemHolders.inventory' = otherItemHolders.inventory
+	all otherItemHolders : ih | otherItemHolders.balance' = otherItemHolders.balance
 }
 
-pred updateAuctionsStatus [a : Auction] {
-	all otherAuctions : (Auction - a) |
+pred updateAuctionsStatus [a : set Auction] {
+	all otherAuctions : a |
 		otherAuctions.auctionStatus = ThirdRound => otherAuctions.auctionStatus' = Ended
 
-	all otherAuctions : (Auction - a) |
+	all otherAuctions : a |
 		otherAuctions.auctionStatus = SecondRound => otherAuctions.auctionStatus' = ThirdRound
 
-	all otherAuctions : (Auction - a) |
+	all otherAuctions : a |
 		otherAuctions.auctionStatus = FirstRound => otherAuctions.auctionStatus' = SecondRound
 
-	all otherAuctions : (Auction - a) |
+	all otherAuctions : a |
 		otherAuctions.auctionStatus = JustStarted => otherAuctions.auctionStatus' = FirstRound
 }
 
@@ -159,9 +159,31 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 		2. The other Player's relations should remain the same.
 		3. The other Auctions' relations should remain the same.
 	*/
-	otherItemHoldersStayTheSame[p]
+	// TODO: fix the parameters
+	// otherItemHoldersStayTheSame[p]
 	// otherItemsStayTheSame[i]
 	// otherAuctionsStayTheSame[a]
+	// updateAuctionsStatus[a]
+}
+
+pred bidOnAuction [p : Player, a : Auction] {
+	/*
+		Preconditions
+		1. The Player to bid must be different from the seller.
+		2. The Auction must be Active (i.e., at most, at the third round).
+		3. The Player must not already be the highest bidder.
+	*/
+	p != a.seller
+	a.auctionStatus = Active
+	a.highestBidder != p
+
+	/*
+		Postconditions
+		1. The Player becomes the highest bidder.
+	*/
+	a.highestBidder' = p
+
+	Track.op' = BID
 }
 
 /*
@@ -200,7 +222,9 @@ pred init [] {
 */
 
 pred trans []  {
-	(some i : Item, p : Player, a : Auction | createAuction[i, p, a])
+	// (some i : Item, p : Player, a : Auction | createAuction[i, p, a])
+	// or
+	(after some a : Auction | some p : Player |  bidOnAuction[p, a])
 }
 
 /*
