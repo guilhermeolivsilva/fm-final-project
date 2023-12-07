@@ -7,6 +7,11 @@
 */
 
 /*
+	PACKAGES
+*/
+open util/integer
+
+/*
 	SIGNATURES
 */
 
@@ -33,14 +38,9 @@ sig Item {
 // Player/Auction House
 abstract sig ItemHolder {
 	var inventory: set Item,
-	var goldPurse: set GoldCoin
+	var balance: Int
 }
 sig Player, AuctionHouse extends ItemHolder{}
-
-// Gold
-sig GoldCoin {
-	var holder: lone ItemHolder
-}
 
 /*
 	OPERATORS
@@ -97,12 +97,6 @@ fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
 		(i.owner = ih => i in ih.inventory) &&
 		(i in ih.inventory => i.owner = ih)
-}
-
-fact "Gold holding is reflexive" {
-	all gc : GoldCoin, ih : ItemHolder |
-		(gc.holder = ih => gc in ih.goldPurse) &&
-		(gc in ih.goldPurse => gc.holder = ih)
 }
 
 fact "Item owner can't bid in their own auction" {
@@ -193,7 +187,12 @@ pred init [] {
 
 	// All Items have a Player owner
 	all i : Item | some p : Player | i.owner = p
-	all gc : GoldCoin | some p : Player | gc.holder = p
+
+	// All Players start with 3 gold
+	all p : Player | p.balance = 3
+
+	// The Auction House starts with no gold
+	AuctionHouse.balance = 0
 }
 
 /*
@@ -213,4 +212,4 @@ pred System {
 	always trans
 }
 
-run execution { System } for 8
+run execution { System } for 10
