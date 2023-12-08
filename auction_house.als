@@ -63,13 +63,13 @@ one sig Track {
 
 fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
-		(i.owner = ih => i in ih.inventory) &&
+		(i.owner = ih => i in ih.inventory) and
 		(i in ih.inventory => i.owner = ih)
 }
 
 fact "Item owner can't bid in their own auction" {
 	all a : Auction |
-		(no a.seller) ||
+		(no a.seller) or
 		(a.seller != a.highestBidder && a.seller != a.buyoutBidder)
 }
 
@@ -84,17 +84,25 @@ fact "Items must not appear in multiple auctions" {
 	FRAME CONDITIONS
 */
 
+pred SetOfItemsIsUnchanged[itemSet : set Item] {
+	all items : itemSet | items' = items
+}
+
+pred SetOfPlayersIsUnchanged[playerSet : set Player] {
+	all players : playerSet | players' = players
+}
+
+pred AuctionHouseIsUnchanged[i : Item] {
+	AuctionHouse.balance' = AuctionHouse.balance
+	all items : AuctionHouse.inventory - i |
+		(items in AuctionHouse.inventory => items in AuctionHouse.inventory') and
+		(items.owner' = items.owner)
+}
 
 /*
 	OPERATIONS
 */
 
-/*
-	KNOWN BUGS
-	1. An Auction status does not hold between steps.
-	2. The item.owner relation does not hold between steps.
-	3. The item.itemStatus relation does not hold between steps.
-*/
 pred createAuction [i : Item, p : Player, a : Auction] {
 	// Preconditions
 	// 1. The Item must not be already listed in another Auction.
@@ -106,6 +114,9 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 
 	// 3. The Auction must be inactive.
 	a.auctionStatus = NotStarted
+
+	// 4. The Player must have at least 1 gold in order to sell something.
+	gte[p.balance, 1]
 
 	// Post-conditions
 	// 1. The Item ownership is transferred to the Auction House and removed from the seller's inventory.
@@ -127,12 +138,23 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 	no a.highestBidder
 	no a.buyoutBidder
 
+	// 6. The Player pays a tax of 1 gold to list the item.
+	p.balance' = sub[p.balance, 1]
+
 	Track.op' = CREATE
 
 	// Frame conditions
-	// 1. Other Items in the Player p's inventory should remain the same.
-	// 2. The other Player's relations should remain the same.
-	// 3. The other Auctions' relations should remain the same.
+	// 1. Items unrelated to the Auction should remain the same.
+	// (This includes the other items in the Seller's inventory.)
+	SetOfItemsIsUnchanged[Item - i]
+	SetOfItemsIsUnchanged[p.inventory - i]
+
+	// 2. The other Player's  should remain the same.
+	SetOfPlayersIsUnchanged[(Player - p)]
+
+	// 3. The Auction House retains its attributes: it keeps its balance and
+	// all the other previously listed items.
+	AuctionHouseIsUnchanged[i]
 }
 
 pred bidOnAuction [p : Player, a : Auction] {
@@ -158,6 +180,9 @@ pred bidOnAuction [p : Player, a : Auction] {
 */
 
 pred init [] {
+	// There is only one Auction House
+	one AuctionHouse
+
 	// No initial operation to track
 	no op
 
@@ -200,7 +225,8 @@ pred trans []  {
 
 pred System {
 	init
-	always trans
+	// always trans
+	trans
 }
 
 run execution { System } for 10
