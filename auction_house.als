@@ -80,23 +80,44 @@ fact "Items must not appear in multiple auctions" {
 		a1 != a2 => a1.forSale != a2.forSale
 }
 
+pred UpdateAuctionStatus[auctionSet : set Auction] {
+	all auctions : auctionSet |
+		(auctions.auctionStatus = JustStarted => auctions.auctionStatus'' = FirstRound) and
+		(auctions.auctionStatus = FirstRound => auctions.auctionStatus' = SecondRound) and
+		(auctions.auctionStatus = SecondRound => auctions.auctionStatus' = ThirdRound) and
+		(auctions.auctionStatus = ThirdRound => auctions.auctionStatus' = Ended)
+}
+
 /*
 	FRAME CONDITIONS
 */
 
+pred SetOfAuctionsIsUnchanged[auctionSet : set Auction] {
+	all auctions : auctionSet |
+		(auctions.seller' = auctions.seller) and
+		(auctions.forSale' = auctions.forSale) and
+		(auctions.highestBidder' = auctions.highestBidder) and
+		(auctions.buyoutBidder' = auctions.buyoutBidder)
+}
+
 pred SetOfItemsIsUnchanged[itemSet : set Item] {
-	all items : itemSet | items' = items
+	all items : itemSet |
+		(items.owner' = items.owner) and
+		(items.itemStatus'= items.itemStatus)
 }
 
 pred SetOfPlayersIsUnchanged[playerSet : set Player] {
-	all players : playerSet | players' = players
+	all players : playerSet |
+		(players.inventory' = players.inventory) and
+		(players.balance' = players.balance)
 }
 
-pred AuctionHouseIsUnchanged[i : Item] {
+pred AuctionHouseIsUnchanged[itemSet : set Item] {
 	AuctionHouse.balance' = AuctionHouse.balance
-	all items : AuctionHouse.inventory - i |
+	all items : itemSet |
 		(items in AuctionHouse.inventory => items in AuctionHouse.inventory') and
-		(items.owner' = items.owner)
+		(items.owner' = items.owner) and
+		(items.itemStatus' = items.itemStatus)
 }
 
 /*
@@ -135,13 +156,18 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 	a.seller' = p
 
 	// 5. There are no bidders.
-	no a.highestBidder
-	no a.buyoutBidder
+	a.highestBidder' = none
+	a.buyoutBidder' = none
 
 	// 6. The Player pays a tax of 1 gold to list the item.
 	p.balance' = sub[p.balance, 1]
 
+	// Internal management
+	// 1. Track the operation
 	Track.op' = CREATE
+
+	// 2. Update the status of other auctions
+	UpdateAuctionStatus[Auction - a]
 
 	// Frame conditions
 	// 1. Items unrelated to the Auction should remain the same.
@@ -150,11 +176,14 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 	SetOfItemsIsUnchanged[p.inventory - i]
 
 	// 2. The other Player's  should remain the same.
-	SetOfPlayersIsUnchanged[(Player - p)]
+	SetOfPlayersIsUnchanged[Player - p]
 
 	// 3. The Auction House retains its attributes: it keeps its balance and
 	// all the other previously listed items.
-	AuctionHouseIsUnchanged[i]
+	AuctionHouseIsUnchanged[AuctionHouse.inventory - i]
+
+	// 4. Other Auctions should remain the same.
+	SetOfAuctionsIsUnchanged[Auction - a]
 }
 
 pred bidOnAuction [p : Player, a : Auction] {
@@ -172,7 +201,33 @@ pred bidOnAuction [p : Player, a : Auction] {
 	// 1. The Player becomes the highest bidder.
 	a.highestBidder' = p
 
+	// Internal management
+	// 1. Track the operation
 	Track.op' = BID
+
+	// 2. Update all the auctions' status
+	// TOOD: make UpdateAuctionStatus and this predicate consistent
+	// UpdateAuctionStatus[Auction]
+
+	// Frame conditions
+	// 1. Items unrelated to the Auction should remain the same.
+	SetOfItemsIsUnchanged[Item]
+
+	// 2. The other Player's  should remain the same.
+	SetOfPlayersIsUnchanged[Player]
+
+	// 3. The Auction House retains its attributes: it keeps its balance and
+	// all the other previously listed items.
+	AuctionHouseIsUnchanged[AuctionHouse.inventory]
+
+	// 4. Other Auctions should remain the same.
+	SetOfAuctionsIsUnchanged[Auction - a]
+
+	// 5. Other attributes of `a`, except for the highest bidder, must
+	// remain the same.
+	a.seller' = a.seller
+	a.forSale' = a.forSale
+	a.buyoutBidder' = a.buyoutBidder
 }
 
 /*
@@ -215,8 +270,7 @@ pred init [] {
 
 pred trans []  {
 	(some i : Item, p : Player, a : Auction | createAuction[i, p, a])
-	// or
-	// (after some a : Auction | some p : Player |  bidOnAuction[p, a])
+	(after some a : Auction, p : Player | bidOnAuction[p, a])
 }
 
 /*
