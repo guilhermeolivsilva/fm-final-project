@@ -82,7 +82,7 @@ fact "Items must not appear in multiple auctions" {
 
 pred UpdateAuctionStatus[auctionSet : set Auction] {
 	all auctions : auctionSet |
-		(auctions.auctionStatus = JustStarted => auctions.auctionStatus'' = FirstRound) and
+		(auctions.auctionStatus = JustStarted => auctions.auctionStatus' = FirstRound) and
 		(auctions.auctionStatus = FirstRound => auctions.auctionStatus' = SecondRound) and
 		(auctions.auctionStatus = SecondRound => auctions.auctionStatus' = ThirdRound) and
 		(auctions.auctionStatus = ThirdRound => auctions.auctionStatus' = Ended)
@@ -279,7 +279,6 @@ pred trans []  {
 
 pred System {
 	init
-	// always trans
 	trans
 }
 
