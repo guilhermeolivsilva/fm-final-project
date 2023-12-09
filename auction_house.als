@@ -82,10 +82,10 @@ fact "Items must not appear in multiple auctions" {
 
 pred UpdateAuctionStatus[auctionSet : set Auction] {
 	all auctions : auctionSet |
-		(auctions.auctionStatus = JustStarted => auctions.auctionStatus' = FirstRound) and
-		(auctions.auctionStatus = FirstRound => auctions.auctionStatus' = SecondRound) and
-		(auctions.auctionStatus = SecondRound => auctions.auctionStatus' = ThirdRound) and
-		(auctions.auctionStatus = ThirdRound => auctions.auctionStatus' = Ended)
+		(auctions.auctionStatus' = JustStarted => auctions.auctionStatus'' = FirstRound) and
+		(auctions.auctionStatus' = FirstRound => auctions.auctionStatus'' = SecondRound) and
+		(auctions.auctionStatus' = SecondRound => auctions.auctionStatus'' = ThirdRound) and
+		(auctions.auctionStatus' = ThirdRound => auctions.auctionStatus'' = Ended)
 }
 
 /*
@@ -215,8 +215,7 @@ pred bidOnAuction[p : Player, a : Auction] {
 	Track.op' = BID
 
 	// 2. Update all the auctions' status to the next round.
-	// TOOD: make UpdateAuctionStatus and this predicate consistent
-	// UpdateAuctionStatus[Auction]
+	UpdateAuctionStatus[Auction]
 
 	// Frame conditions
 	// 1. Items unrelated to the Auction should remain the same.
@@ -321,7 +320,44 @@ pred endSoldAuction[a : Auction] {
 	SetOfItemsIsUnchanged[Item - a.forSale]
 
 	// 2. The other Player's  should remain the same.
-	// SetOfPlayersIsUnchanged[Player - a.highestBidder]
+	SetOfPlayersIsUnchanged[Player - a.highestBidder - a.seller]
+
+	// 3. The Auction House retains its attributes: it keeps its balance and
+	// all the other previously listed items.
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.forSale]
+
+	// 4. Other Auctions should remain the same.
+	SetOfAuctionsIsUnchanged[Auction - a]
+}
+
+pred endUnsoldAuction[a : Auction] {
+	// Preconditions
+	// 1. The Auction must have been sold.
+	a.auctionStatus' = AuctionHasNotBeenSold
+
+	// Postconditions
+	// 1. The Auction is marked as Ended.
+	a.auctionStatus'' = Ended
+
+	// 4. The unsold Item is returned to the original owner
+	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.forSale
+	a.forSale.owner'' = a.seller'
+	a.seller'.inventory'' = a.seller.inventory' + a.forSale
+
+	// 5. The sold Item is listed as NotForSale.
+	a.forSale.itemStatus'' = NotForSale
+
+	// Internal management
+	// 1. Track the operations
+	Track.op'' = END
+
+	// Frame conditions
+	// 1. Items unrelated to the Auction should remain the same.
+	// (This includes the other items in the Seller's inventory.)
+	SetOfItemsIsUnchanged[Item - a.forSale]
+
+	// 2. The other Player's  should remain the same.
+	SetOfPlayersIsUnchanged[Player'' - a.seller]
 
 	// 3. The Auction House retains its attributes: it keeps its balance and
 	// all the other previously listed items.
@@ -335,7 +371,7 @@ pred endSoldAuction[a : Auction] {
 	INITIAL STATE
 */
 
-pred init [] {
+pred init[] {
 	// There is only one Auction House
 	one AuctionHouse
 
@@ -369,11 +405,11 @@ pred init [] {
 	TRANSITION RELATION
 */
 
-pred trans []  {
+pred trans[] {
 	some i : Item, p : Player, a : Auction | createAuction[i, p, a]
 	after some a : Auction, p : Player |
-		// (bidOnAuction[p, a]) or
-		(buyoutAuction[p, a] and endSoldAuction[a])
+		(bidOnAuction[p, a] or buyoutAuction[p, a])
+		and (endSoldAuction[a] or endUnsoldAuction[a])
 }
 
 /*
