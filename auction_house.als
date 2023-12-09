@@ -70,14 +70,22 @@ fact "Item ownership is reflexive" {
 fact "Item owner can't bid in their own auction" {
 	all a : Auction |
 		(no a.seller) or
-		(a.seller != a.highestBidder && a.seller != a.buyoutBidder)
+		(a.seller != a.highestBidder and a.seller != a.buyoutBidder)
 }
 
 fact "Items must not appear in multiple auctions" {
 	all a1, a2 : Auction |
-		a1.auctionStatus = Active &&
-		a2.auctionStatus = Active &&
+		a1.auctionStatus = Active and
+		a2.auctionStatus = Active and
 		a1 != a2 => a1.forSale != a2.forSale
+}
+
+fact "Ended Auctions cannot restart" {
+	all a : Auction | a.auctionStatus = Ended => a.auctionStatus' = Ended
+}
+
+fact "No balance can be negative" {
+	always all ih : ItemHolder | gte[ih.balance, 0]
 }
 
 pred UpdateAuctionStatus[auctionSet : set Auction] {
@@ -408,7 +416,7 @@ pred init[] {
 pred trans[] {
 	some i : Item, p : Player, a : Auction | createAuction[i, p, a]
 	after some a : Auction, p : Player |
-		(bidOnAuction[p, a] or buyoutAuction[p, a])
+		(buyoutAuction[p, a])
 		and (endSoldAuction[a] or endUnsoldAuction[a])
 }
 
@@ -422,3 +430,63 @@ pred System {
 }
 
 run execution { System } for 8
+
+
+/*
+	PROPERTIES
+*/
+
+pred p1 {
+	// No Player can bid on their own Auction.
+	all a : Auction |
+		(a.seller != a.highestBidder and a.seller != a.buyoutBidder) or
+		no a.seller
+}
+
+pred p2 {
+	// Every Item belongs to exactly 1 owner.
+	all i : Item | #i.owner = 1
+}
+
+pred p3 {
+	// A Player must have owned the Item they're selling.
+	all a : Auction | all p : Player | a.seller' = p => a.forSale' in p.inventory
+}
+
+pred p4 {
+	// A bought out Auction ends instantly.
+	Track.op = BUY => Track.op' = END
+}
+
+pred p5 {
+	// A Player that buys out an Auction had at least 2 gold before.
+	all p : Player | Track.op' = BUY => gte[p.balance, 2]
+}
+
+pred p6 {
+	// A Player that sells an Item receives 1 gold.
+	all p : Player | Track.op' = END => eq[p.balance', add[p.balance, 1]]
+}
+
+/*
+	ASSERTIONS
+*/
+
+assert checkP1 { System => p1 }
+check checkP1
+
+
+assert checkP2 { System => p2 }
+check checkP2
+
+assert checkP3 { System => p3 }
+check checkP3
+
+assert checkP4 { System => p4 }
+check checkP4
+
+assert checkP5 { System => p5 }
+check checkP5
+
+assert checkP6 { System => p6 }
+check checkP6
