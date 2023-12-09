@@ -17,7 +17,7 @@ open util/integer
 
 // Auction
 abstract sig AuctionStatus {}
-one sig NotStarted, Active, Ended extends AuctionStatus {}
+one sig NotStarted, Active, AuctionHasBeenSold, AuctionHasNotBeenSold, Ended extends AuctionStatus {}
 sig JustStarted, FirstRound, SecondRound, ThirdRound extends Active {}
 sig Auction {
 	var seller: lone Player,
@@ -52,7 +52,7 @@ sig Player, AuctionHouse extends ItemHolder{}
 */
 
 abstract sig Operator {}
-one sig CREATE, END, BID, BUY, TAX extends Operator {}
+one sig CREATE, END, BID, BUY extends Operator {}
 one sig Track {
   var op: lone Operator
 }
@@ -112,19 +112,22 @@ pred SetOfPlayersIsUnchanged[playerSet : set Player] {
 		(players.balance' = players.balance)
 }
 
-pred AuctionHouseIsUnchanged[itemSet : set Item] {
-	AuctionHouse.balance' = AuctionHouse.balance
+pred AuctionHouseInventoryIsUnchanged[itemSet : set Item] {
 	all items : itemSet |
 		(items in AuctionHouse.inventory => items in AuctionHouse.inventory') and
 		(items.owner' = items.owner) and
 		(items.itemStatus' = items.itemStatus)
 }
 
+pred AuctionHouseBalanceIsUnchanged[] {
+	AuctionHouse.balance' = AuctionHouse.balance
+}
+
 /*
 	OPERATIONS
 */
 
-pred createAuction [i : Item, p : Player, a : Auction] {
+pred createAuction[i : Item, p : Player, a : Auction] {
 	// Preconditions
 	// 1. The Item must not be already listed in another Auction.
 	no otherAuctions : (Auction - a) | otherAuctions.forSale = i
@@ -145,17 +148,20 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 	AuctionHouse.inventory' = AuctionHouse.inventory + i
 	p.inventory' = (p.inventory - i)
 
-	// 2. The Item status is set to ForSale.
+	// 2. The Auction House receives the deposit tax
+	AuctionHouse.balance' = add[AuctionHouse.balance, 1]
+
+	// 3. The Item status is set to ForSale.
 	i.itemStatus' = ForSale
 
-	// 3. The Auction status is set to "just started".
+	// 4. The Auction status is set to "just started".
 	a.auctionStatus' = JustStarted
 
-	// 4. The Item is set as the sellee, Player is set as the seller.
+	// 5. The Item is set as the sellee, Player is set as the seller.
 	a.forSale' = i
 	a.seller' = p
 
-	// 5. There are no bidders.
+	// 6. There are no bidders.
 	a.highestBidder' = none
 	a.buyoutBidder' = none
 
@@ -178,15 +184,15 @@ pred createAuction [i : Item, p : Player, a : Auction] {
 	// 2. The other Player's  should remain the same.
 	SetOfPlayersIsUnchanged[Player - p]
 
-	// 3. The Auction House retains its attributes: it keeps its balance and
-	// all the other previously listed items.
-	AuctionHouseIsUnchanged[AuctionHouse.inventory - i]
+	// 3. The Auction House retains its attributes: it keeps all the other
+	// previously listed items.
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - i]
 
 	// 4. Other Auctions should remain the same.
 	SetOfAuctionsIsUnchanged[Auction - a]
 }
 
-pred bidOnAuction [p : Player, a : Auction] {
+pred bidOnAuction[p : Player, a : Auction] {
 	// Preconditions
 	// 1. The Player to bid must be different from the seller.
 	p != a.seller
@@ -197,6 +203,9 @@ pred bidOnAuction [p : Player, a : Auction] {
 	// 3. The Player must not already be the highest bidder.
 	a.highestBidder != p
 
+	// 4. The Player must have at least 1 gold to bid.
+	gte[p.balance, 1]
+
 	// Postconditions
 	// 1. The Player becomes the highest bidder.
 	a.highestBidder' = p
@@ -205,7 +214,7 @@ pred bidOnAuction [p : Player, a : Auction] {
 	// 1. Track the operation
 	Track.op' = BID
 
-	// 2. Update all the auctions' status
+	// 2. Update all the auctions' status to the next round.
 	// TOOD: make UpdateAuctionStatus and this predicate consistent
 	// UpdateAuctionStatus[Auction]
 
@@ -218,7 +227,8 @@ pred bidOnAuction [p : Player, a : Auction] {
 
 	// 3. The Auction House retains its attributes: it keeps its balance and
 	// all the other previously listed items.
-	AuctionHouseIsUnchanged[AuctionHouse.inventory]
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory]
+	AuctionHouseBalanceIsUnchanged[]
 
 	// 4. Other Auctions should remain the same.
 	SetOfAuctionsIsUnchanged[Auction - a]
@@ -227,7 +237,98 @@ pred bidOnAuction [p : Player, a : Auction] {
 	// remain the same.
 	a.seller' = a.seller
 	a.forSale' = a.forSale
-	a.buyoutBidder' = a.buyoutBidder
+	a.buyoutBidder' = none
+}
+
+pred buyoutAuction[p : Player, a : Auction] {
+	// Preconditions
+	// 1. The Player to buyout must be different from the seller.
+	p != a.seller
+
+	// 2. The Auction must be Active (i.e., at most, at the third round).
+	a.auctionStatus = Active
+
+	// 3. The Player must have at least 1 gold to bid.
+	gte[p.balance, 1]
+
+	// Postconditions
+	// 1. The Player becomes the buyout bidder. (And the highest bidder too,
+	// for convenience.)
+	a.buyoutBidder' = p
+	a.highestBidder' = p
+
+	// 2. The Auction ends.
+	a.auctionStatus' = AuctionHasBeenSold
+
+	// Internal management
+	// 1. Track the operations
+	Track.op' = BUY
+
+	// 2. Update the other auctions' status to the next round.
+	UpdateAuctionStatus[Auction - a]
+
+	// Frame conditions
+	// 1. Items unrelated to the Auction should remain the same.
+	SetOfItemsIsUnchanged[Item]
+
+	// 2. The other Player's  should remain the same.
+	SetOfPlayersIsUnchanged[Player]
+
+	// 3. The Auction House retains its attributes: it keeps its balance and
+	// all the other previously listed items.
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory]
+	AuctionHouseBalanceIsUnchanged[]
+
+	// 4. Other Auctions should remain the same.
+	SetOfAuctionsIsUnchanged[Auction - a]
+
+	// 5. Other attributes of `a` must remain the same.
+	a.seller' = a.seller
+	a.forSale' = a.forSale
+}
+
+pred endSoldAuction[a : Auction] {
+	// Preconditions
+	// 1. The Auction must have been sold.
+	a.auctionStatus' = AuctionHasBeenSold
+
+	// Postconditions
+	// 1. The Auction is marked as Ended.
+	a.auctionStatus'' = Ended
+
+	// 2. The Auction House's cut is collected.
+	AuctionHouse.balance'' = add[AuctionHouse.balance', 1]
+
+	// 3. The Players involved in the Auction exchange gold
+	a.highestBidder'.balance'' = sub[a.highestBidder'.balance, 3]
+	a.seller.balance'' = add[a.seller.balance', 2]
+
+	// 4. The sold Item is transferred to the winning Player
+	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.forSale
+	a.forSale.owner'' = a.highestBidder'
+	a.highestBidder'.inventory'' = a.highestBidder.inventory' + a.forSale
+
+	// 5. The sold Item is listed as NotForSale.
+	a.forSale.itemStatus'' = NotForSale
+
+	// Internal management
+	// 1. Track the operations
+	Track.op'' = END
+
+	// Frame conditions
+	// 1. Items unrelated to the Auction should remain the same.
+	// (This includes the other items in the Seller's inventory.)
+	SetOfItemsIsUnchanged[Item - a.forSale]
+
+	// 2. The other Player's  should remain the same.
+	// SetOfPlayersIsUnchanged[Player - a.highestBidder]
+
+	// 3. The Auction House retains its attributes: it keeps its balance and
+	// all the other previously listed items.
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.forSale]
+
+	// 4. Other Auctions should remain the same.
+	SetOfAuctionsIsUnchanged[Auction - a]
 }
 
 /*
@@ -269,8 +370,10 @@ pred init [] {
 */
 
 pred trans []  {
-	(some i : Item, p : Player, a : Auction | createAuction[i, p, a])
-	(after some a : Auction, p : Player | bidOnAuction[p, a])
+	some i : Item, p : Player, a : Auction | createAuction[i, p, a]
+	after some a : Auction, p : Player |
+		// (bidOnAuction[p, a]) or
+		(buyoutAuction[p, a] and endSoldAuction[a])
 }
 
 /*
@@ -282,4 +385,4 @@ pred System {
 	trans
 }
 
-run execution { System } for 10
+run execution { System } for 8
