@@ -3,7 +3,7 @@
 	Final Project – Auction House
 
 	Name:  Guilherme de Oliveira Silva
-	ID: 
+	ID: 2023671528
 */
 
 /*
@@ -15,17 +15,12 @@ open util/integer
 	SIGNATURES
 */
 
-// Auction
-abstract sig AuctionStatus {}
-one sig NotStarted, Active, AuctionHasBeenSold, AuctionHasNotBeenSold, Ended extends AuctionStatus {}
-sig JustStarted, FirstRound, SecondRound, ThirdRound extends Active {}
-sig Auction {
-	var seller: lone Player,
-	var forSale: lone Item,
-	var auctionStatus: one AuctionStatus,
-	var highestBidder: lone Player,
-	var buyoutBidder: lone Player
+// Player/Auction House
+abstract sig ItemHolder {
+	var inventory: set Item,
+	var balance: Int
 }
+sig Player, AuctionHouse extends ItemHolder{}
 
 // Item
 abstract sig ItemStatus {}
@@ -35,12 +30,17 @@ sig Item {
 	var itemStatus: one ItemStatus
 }
 
-// Player/Auction House
-abstract sig ItemHolder {
-	var inventory: set Item,
-	var balance: Int
+// Auction
+abstract sig AuctionStatus {}
+one sig NotStarted, Active, AuctionHasBeenSold, AuctionHasNotBeenSold, Ended extends AuctionStatus {}
+sig JustStarted, FirstRound, SecondRound, ThirdRound extends Active {}
+sig Auction {
+	var seller: lone Player,
+	var listedItem: lone Item,
+	var auctionStatus: one AuctionStatus,
+	var highestBidder: lone Player,
+	var buyoutBuyer: lone Player
 }
-sig Player, AuctionHouse extends ItemHolder{}
 
 /*
 	OPERATORS
@@ -61,23 +61,23 @@ one sig Track {
 	AUXILIARY PREDICATES AND FACTS
 */
 
+fact "Item owner can't bid in their own auction" {
+	all a : Auction |
+		(no a.seller) or
+		(a.seller != a.highestBidder and a.seller != a.buyoutBuyer)
+}
+
 fact "Item ownership is reflexive" {
 	all i : Item, ih : ItemHolder |
 		(i.owner = ih => i in ih.inventory) and
 		(i in ih.inventory => i.owner = ih)
 }
 
-fact "Item owner can't bid in their own auction" {
-	all a : Auction |
-		(no a.seller) or
-		(a.seller != a.highestBidder and a.seller != a.buyoutBidder)
-}
-
 fact "Items must not appear in multiple auctions" {
 	all a1, a2 : Auction |
 		a1.auctionStatus = Active and
 		a2.auctionStatus = Active and
-		a1 != a2 => a1.forSale != a2.forSale
+		a1 != a2 => a1.listedItem != a2.listedItem
 }
 
 fact "Ended Auctions cannot restart" {
@@ -103,9 +103,9 @@ pred UpdateAuctionStatus[auctionSet : set Auction] {
 pred SetOfAuctionsIsUnchanged[auctionSet : set Auction] {
 	all auctions : auctionSet |
 		(auctions.seller' = auctions.seller) and
-		(auctions.forSale' = auctions.forSale) and
+		(auctions.listedItem' = auctions.listedItem) and
 		(auctions.highestBidder' = auctions.highestBidder) and
-		(auctions.buyoutBidder' = auctions.buyoutBidder)
+		(auctions.buyoutBuyer' = auctions.buyoutBuyer)
 }
 
 pred SetOfItemsIsUnchanged[itemSet : set Item] {
@@ -138,7 +138,7 @@ pred AuctionHouseBalanceIsUnchanged[] {
 pred createAuction[i : Item, p : Player, a : Auction] {
 	// Preconditions
 	// 1. The Item must not be already listed in another Auction.
-	no otherAuctions : (Auction - a) | otherAuctions.forSale = i
+	no otherAuctions : (Auction - a) | otherAuctions.listedItem = i
 	i.itemStatus = NotForSale
 
 	// 2. The Player must own the item.
@@ -166,12 +166,12 @@ pred createAuction[i : Item, p : Player, a : Auction] {
 	a.auctionStatus' = JustStarted
 
 	// 5. The Item is set as the sellee, Player is set as the seller.
-	a.forSale' = i
+	a.listedItem' = i
 	a.seller' = p
 
 	// 6. There are no bidders.
 	a.highestBidder' = none
-	a.buyoutBidder' = none
+	a.buyoutBuyer' = none
 
 	// 6. The Player pays a tax of 1 gold to list the item.
 	p.balance' = sub[p.balance, 1]
@@ -243,8 +243,8 @@ pred bidOnAuction[p : Player, a : Auction] {
 	// 5. Other attributes of `a`, except for the highest bidder, must
 	// remain the same.
 	a.seller' = a.seller
-	a.forSale' = a.forSale
-	a.buyoutBidder' = none
+	a.listedItem' = a.listedItem
+	a.buyoutBuyer' = none
 }
 
 pred buyoutAuction[p : Player, a : Auction] {
@@ -261,7 +261,7 @@ pred buyoutAuction[p : Player, a : Auction] {
 	// Postconditions
 	// 1. The Player becomes the buyout bidder. (And the highest bidder too,
 	// for convenience.)
-	a.buyoutBidder' = p
+	a.buyoutBuyer' = p
 	a.highestBidder' = p
 
 	// 2. The Auction ends.
@@ -291,7 +291,7 @@ pred buyoutAuction[p : Player, a : Auction] {
 
 	// 5. Other attributes of `a` must remain the same.
 	a.seller' = a.seller
-	a.forSale' = a.forSale
+	a.listedItem' = a.listedItem
 }
 
 pred endSoldAuction[a : Auction] {
@@ -311,12 +311,12 @@ pred endSoldAuction[a : Auction] {
 	a.seller.balance'' = add[a.seller.balance', 2]
 
 	// 4. The sold Item is transferred to the winning Player
-	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.forSale
-	a.forSale.owner'' = a.highestBidder'
-	a.highestBidder'.inventory'' = a.highestBidder.inventory' + a.forSale
+	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.listedItem
+	a.listedItem.owner'' = a.highestBidder'
+	a.highestBidder'.inventory'' = a.highestBidder.inventory' + a.listedItem
 
 	// 5. The sold Item is listed as NotForSale.
-	a.forSale.itemStatus'' = NotForSale
+	a.listedItem.itemStatus'' = NotForSale
 
 	// Internal management
 	// 1. Track the operations
@@ -325,14 +325,14 @@ pred endSoldAuction[a : Auction] {
 	// Frame conditions
 	// 1. Items unrelated to the Auction should remain the same.
 	// (This includes the other items in the Seller's inventory.)
-	SetOfItemsIsUnchanged[Item - a.forSale]
+	SetOfItemsIsUnchanged[Item - a.listedItem]
 
 	// 2. The other Player's  should remain the same.
 	SetOfPlayersIsUnchanged[Player - a.highestBidder - a.seller]
 
 	// 3. The Auction House retains its attributes: it keeps its balance and
 	// all the other previously listed items.
-	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.forSale]
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.listedItem]
 
 	// 4. Other Auctions should remain the same.
 	SetOfAuctionsIsUnchanged[Auction - a]
@@ -347,13 +347,13 @@ pred endUnsoldAuction[a : Auction] {
 	// 1. The Auction is marked as Ended.
 	a.auctionStatus'' = Ended
 
-	// 4. The unsold Item is returned to the original owner
-	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.forSale
-	a.forSale.owner'' = a.seller'
-	a.seller'.inventory'' = a.seller.inventory' + a.forSale
+	// 2. The unsold Item is returned to the original owner
+	AuctionHouse.inventory'' = AuctionHouse.inventory' - a.listedItem
+	a.listedItem.owner'' = a.seller'
+	a.seller'.inventory'' = a.seller.inventory' + a.listedItem
 
-	// 5. The sold Item is listed as NotForSale.
-	a.forSale.itemStatus'' = NotForSale
+	// 3. The sold Item is listed as NotForSale.
+	a.listedItem.itemStatus'' = NotForSale
 
 	// Internal management
 	// 1. Track the operations
@@ -362,14 +362,14 @@ pred endUnsoldAuction[a : Auction] {
 	// Frame conditions
 	// 1. Items unrelated to the Auction should remain the same.
 	// (This includes the other items in the Seller's inventory.)
-	SetOfItemsIsUnchanged[Item - a.forSale]
+	SetOfItemsIsUnchanged[Item - a.listedItem]
 
 	// 2. The other Player's  should remain the same.
 	SetOfPlayersIsUnchanged[Player'' - a.seller]
 
 	// 3. The Auction House retains its attributes: it keeps its balance and
 	// all the other previously listed items.
-	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.forSale]
+	AuctionHouseInventoryIsUnchanged[AuctionHouse.inventory - a.listedItem]
 
 	// 4. Other Auctions should remain the same.
 	SetOfAuctionsIsUnchanged[Auction - a]
@@ -381,7 +381,7 @@ pred endUnsoldAuction[a : Auction] {
 
 pred init[] {
 	// There is only one Auction House
-	one AuctionHouse
+	always one AuctionHouse
 
 	// No initial operation to track
 	no op
@@ -391,9 +391,9 @@ pred init[] {
 
 	// No Items nor Players are associated with any Auctions
 	no Auction.highestBidder
-	no Auction.buyoutBidder
+	no Auction.buyoutBuyer
 	no Auction.seller
-	no Auction.forSale
+	no Auction.listedItem
 
 	// No Items are for sale
 	all i : Item | i.itemStatus = NotForSale
@@ -416,7 +416,7 @@ pred init[] {
 pred trans[] {
 	some i : Item, p : Player, a : Auction | createAuction[i, p, a]
 	after some a : Auction, p : Player |
-		(buyoutAuction[p, a])
+		(buyoutAuction[p, a] or bidOnAuction[p, a])
 		and (endSoldAuction[a] or endUnsoldAuction[a])
 }
 
@@ -439,7 +439,7 @@ run execution { System } for 8
 pred p1 {
 	// No Player can bid on their own Auction.
 	all a : Auction |
-		(a.seller != a.highestBidder and a.seller != a.buyoutBidder) or
+		(a.seller != a.highestBidder and a.seller != a.buyoutBuyer) or
 		no a.seller
 }
 
@@ -450,7 +450,7 @@ pred p2 {
 
 pred p3 {
 	// A Player must have owned the Item they're selling.
-	all a : Auction | all p : Player | a.seller' = p => a.forSale' in p.inventory
+	all a : Auction | all p : Player | a.seller' = p => a.listedItem' in p.inventory
 }
 
 pred p4 {
@@ -466,6 +466,11 @@ pred p5 {
 pred p6 {
 	// A Player that sells an Item receives 1 gold.
 	all p : Player | Track.op' = END => eq[p.balance', add[p.balance, 1]]
+}
+
+pred p7 {
+	// When the execution ends, the Auction House's inventory must be empty.
+	Track.op = END => AuctionHouse.inventory = none
 }
 
 /*
@@ -490,3 +495,6 @@ check checkP5
 
 assert checkP6 { System => p6 }
 check checkP6
+
+assert checkP7 { System => p7 }
+check checkP7
